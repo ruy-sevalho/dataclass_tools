@@ -1,4 +1,4 @@
-German Lloyd's High Speed Craft Rules
+dataclass_tools
 =====================================
 
 Package for serializing and deserializing dataclasses.
