@@ -2,7 +2,7 @@ from dataclasses import asdict, dataclass
 
 from hypothesis import given, strategies as st
 
-from dataclass_tools.serializer import serialize_dataclass
+from dataclass_tools.tools import serialize_dataclass
 
 
 @given(st.floats(), st.characters())
