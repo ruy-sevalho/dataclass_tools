@@ -1,4 +1,4 @@
-from dataclasses import dataclass, Field, field, fields, is_dataclass, replace
+from dataclasses import dataclass, Field, field, fields, is_dataclass
 from typing import Any, Optional, Protocol, Union, get_args, runtime_checkable
 from copy import copy, deepcopy
 from enum import Enum
@@ -123,7 +123,7 @@ class ToolsField:
     def _serialize_field(
         self,
         obj: Any,
-        in_list: bool = False,
+        in_collection: bool = False,
     ):
         """Returns a dataclass field serialized."""
 
@@ -131,7 +131,7 @@ class ToolsField:
         name = self._key
         if isinstance(obj, (list, tuple)):
             value: Union[list, tuple, dict] = type(obj)(
-                self._serialize_field(item, in_list=True) for item in obj
+                self._serialize_field(item, in_collection=True) for item in obj
             )
             return {name: value}
         elif isinstance(obj, dict):
@@ -144,18 +144,18 @@ class ToolsField:
                 value.update(**ToolsField(f)._serialize_field(item))
         else:
             value = self._get_and_process_value(obj)
-        if options.flatten or in_list:
+        if options.flatten or in_collection:
             return value
         return {name: value}
 
-    def _field_type(self, dct: dict):
+    def _field_type(self, dct: dict, in_collection=False):
         typ: type = self.field_.type
         if self.options.add_type:
             if self.options.add_type and not self.options.subtype_table:
                 raise TypeError(
                     "If add_type is specified for a field a subtype_table must be given also."
                 )
-            if self.options.flatten:
+            if self.options.flatten or in_collection:
                 type_repr = dct[self._type_key]
             else:
                 type_repr = dct[self._key][self._type_key]
@@ -163,13 +163,13 @@ class ToolsField:
             typ = table[type_repr]
         return typ
 
-    def _field_keys(self, dct: dict):
+    def _field_keys(self, dct: dict, in_collection=False):
         if self.options.flatten:
-            typ = self._field_type(dct)
+            typ = self._field_type(dct, in_collection=in_collection)
             if not isinstance(typ, DataClass):
                 raise (
                     ValueError(
-                        f"Only flattened dataclass fields can be deseirialized, '{typ.__name__}' cannot"
+                        f"'{typ.__name__}' cannot be deserialized with flattened=True, only dataclass fields can."
                     )
                 )
             inner_keys = []
@@ -185,16 +185,24 @@ class ToolsField:
             return inner_keys
         return self._key
 
-    def _deserialize_field(self, raw_dct: dict, build_instance=False) -> dict[str, Any]:
+    def _deserialize_field(
+        self, raw_dct: dict, in_collection=False, build_instance=False
+    ) -> dict[str, Any]:
         """Deserializes a field instance."""
 
         if hasattr(self.field_.type, "__origin__"):
+            if self.options.flatten:
+                raise ValueError(
+                    f"'{type(self.field_.type)}' can't be flattened, only dataclasses"
+                )
             origin: type = self.field_.type.__origin__
             if origin == list or origin == tuple:
                 inner_type_field = copy(self.field_)
-                inner_type_field.type = self.field_.type.__agrs__[0]
+                inner_type_field.type = self.field_.type.__args__[0]
                 value = origin(
-                    ToolsField(inner_type_field)._deserialize_field(item)
+                    ToolsField(inner_type_field)._deserialize_field(
+                        item, in_collection=True
+                    )
                     for item in raw_dct[self._key]
                 )
             elif origin == dict:
@@ -207,17 +215,20 @@ class ToolsField:
                 inner_type_field = copy(self.field_)
                 inner_type_field.type = self.field_.type.__agrs__[1]
                 value = {
-                    key: ToolsField(inner_type_field)._deserialize_field(raw_dct=value)
+                    key: ToolsField(inner_type_field)._deserialize_field(
+                        raw_dct=value, build_instance=build_instance
+                    )
                     for key, value in raw_dct[self._key].items()
                 }
-        value = raw_dct[self._key]
-        if self.options.flatten:
-            field_keys = self._field_keys(raw_dct)
-            input_dict = {key: raw_dct[key] for key in field_keys}
-            value = deserialize_dataclass(input_dict, self._field_type)
-        typ = self._field_type(raw_dct)
+        if in_collection or self.options.flatten:
+            value = raw_dct
+        else:
+            value = raw_dct[self._key]
+        typ = self._field_type(value)
         if is_dataclass(typ):
             value = deserialize_dataclass(value, typ)
+        if self.options.flatten or in_collection:
+            return value
         return {self.field_.name: value}
 
 
@@ -266,7 +277,7 @@ def deserialize_dataclass(
         raise TypeError(
             f"dataclass argument must be a dataclass isntance, not '{type(dataclass).__name__}'"
         )
-    input_dict = _deserialize_dataclass(dataclass, dct)
+    input_dict = _deserialize_dataclass(dct, dataclass)
     return input_dict
 
 
