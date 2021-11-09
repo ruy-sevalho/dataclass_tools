@@ -42,7 +42,7 @@ def test_float_str_tupple_nested_strucuture(childs_tuples, name_parent):
 
 
 @given(st.lists(st.tuples(st.floats(), st.characters())), st.characters())
-def test_float_str_list_nested_strucuture(childs_list, name_parent):
+def test_list_nested_strucuture(childs_list, name_parent):
     @dataclass
     class Child:
         age: float
@@ -57,6 +57,27 @@ def test_float_str_list_nested_strucuture(childs_list, name_parent):
     parent = Parent(childs=childs, name=name_parent)
 
     assert serialize_dataclass(parent) == asdict(parent)
+
+
+@given(st.lists(st.tuples(st.floats(), st.characters())), st.characters())
+def test_list_nested_strucuture_subs_by_attr(childs_list, name_parent):
+    options = DeSerializerOptions(subs_by_attr="name")
+
+    @dataclass
+    class Child:
+        age: float
+        name: str
+
+    @dataclass
+    class Parent:
+        childs: list[Child] = field(metadata={METADATA_KEY: options})
+        name: str
+
+    childs = list(Child(age=age, name=name_child) for age, name_child in childs_list)
+    parent = Parent(childs=childs, name=name_parent)
+    parent_dict = asdict(parent)
+    parent_dict.update({"childs": [name_child for _, name_child in childs_list]})
+    assert serialize_dataclass(parent) == parent_dict
 
 
 @given(st.lists(st.tuples(st.floats(), st.characters())))
@@ -134,7 +155,7 @@ def test_flatten(name, age, street_name, house_number, city):
         house_number: int
         city: str
 
-    options = DeSerializerOptions(flatten=True)
+    options = DeSerializerOptions(flatten=True, add_type=True)
 
     @dataclass
     class Citezen:
@@ -146,5 +167,9 @@ def test_flatten(name, age, street_name, house_number, city):
         street_name=street_name, house_number=house_number, city=city
     )
     citezen = Citezen(person=person, location=location)
-    citezen_dict = {"person": asdict(person), **asdict(location)}
+    citezen_dict = {
+        "person": asdict(person),
+        **asdict(location),
+        **{"location": "StreetAdress"},
+    }
     assert serialize_dataclass(citezen) == citezen_dict
