@@ -137,7 +137,9 @@ class ToolsField:
         elif isinstance(obj, dict):
             value = dict()
             for key, item in obj.items():
-                f: Field = replace(field(), name=deepcopy(key))
+                f: Field = field()
+                f.name = deepcopy(key)
+
                 # f.name = deepcopy(key)
                 value.update(**ToolsField(f)._serialize_field(item))
         else:
@@ -147,7 +149,7 @@ class ToolsField:
         return {name: value}
 
     def _field_type(self, dct: dict):
-        typ = self.field_.type
+        typ: type = self.field_.type
         if self.options.add_type:
             if self.options.add_type and not self.options.subtype_table:
                 raise TypeError(
@@ -189,9 +191,8 @@ class ToolsField:
         if hasattr(self.field_.type, "__origin__"):
             origin: type = self.field_.type.__origin__
             if origin == list or origin == tuple:
-                inner_type_field = replace(
-                    self.field_, type=self.field_.type.__agrs__[0]
-                )
+                inner_type_field = copy(self.field_)
+                inner_type_field.type = self.field_.type.__agrs__[0]
                 value = origin(
                     ToolsField(inner_type_field)._deserialize_field(item)
                     for item in raw_dct[self._key]
@@ -203,9 +204,8 @@ class ToolsField:
                             f"Only flattened dataclass fields can be deseirialized, 'dict' cannot"
                         )
                     )
-                inner_type_field = replace(
-                    self.field_, type=self.field_.type.__agrs__[1]
-                )
+                inner_type_field = copy(self.field_)
+                inner_type_field.type = self.field_.type.__agrs__[1]
                 value = {
                     key: ToolsField(inner_type_field)._deserialize_field(raw_dct=value)
                     for key, value in raw_dct[self._key].items()
@@ -248,7 +248,7 @@ def serialize_dataclass(
     """Serializes a dataclass instance."""
 
     if not isinstance(obj, DataClass):
-        raise TypeError(f"obj must be a dataclass, not '{type(obj)}'")
+        raise TypeError(f"obj must be a dataclass, not '{type(obj).__name__}'")
     return _serialize_dataclass(obj)
 
 
