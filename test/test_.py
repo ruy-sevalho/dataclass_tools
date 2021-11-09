@@ -12,24 +12,29 @@ from dataclass_tools.tools import (
 )
 
 
+@dataclass
+class Child:
+    age: float
+    name: str
+
+
 @given(st.floats(), st.characters())
-def test_float_str_flat_strucuture(age, name):
-    @dataclass
-    class Child:
-        age: float
-        name: str
+def test_serialize_flat_structure(age, name):
 
     child = Child(age=age, name=name)
     assert serialize_dataclass(child) == asdict(child)
 
 
-@given(st.tuples(st.tuples(st.floats(), st.characters())), st.characters())
-def test_float_str_tupple_nested_strucuture(childs_tuples, name_parent):
-    @dataclass
-    class Child:
-        age: float
-        name: str
+@given(st.floats(), st.characters())
+def test_deserialize_flat_structure(age, name):
 
+    child = Child(age=age, name=name)
+    dct = asdict(child)
+    assert deserialize_dataclass(dct, Child) == asdict(child)
+
+
+@given(st.tuples(st.tuples(st.floats(), st.characters())), st.characters())
+def test_serialize_tupple_nested_strucuture(childs_tuples, name_parent):
     @dataclass
     class Parent:
         childs: tuple[Child]
@@ -41,13 +46,21 @@ def test_float_str_tupple_nested_strucuture(childs_tuples, name_parent):
     assert serialize_dataclass(parent) == asdict(parent)
 
 
-@given(st.lists(st.tuples(st.floats(), st.characters())), st.characters())
-def test_list_nested_strucuture(childs_list, name_parent):
+@given(st.tuples(st.tuples(st.floats(), st.characters())), st.characters())
+def test_deserialize_tupple_nested_strucuture(childs_tuples, name_parent):
     @dataclass
-    class Child:
-        age: float
+    class Parent:
+        childs: tuple[Child]
         name: str
 
+    childs = tuple(Child(age=age, name=name_child) for age, name_child in childs_tuples)
+    parent = Parent(childs=childs, name=name_parent)
+    dct = asdict(parent)
+    assert deserialize_dataclass(dct, Parent) == asdict(parent)
+
+
+@given(st.lists(st.tuples(st.floats(), st.characters())), st.characters())
+def test_serialize_list_nested_strucuture(childs_list, name_parent):
     @dataclass
     class Parent:
         childs: list[Child]
@@ -60,13 +73,8 @@ def test_list_nested_strucuture(childs_list, name_parent):
 
 
 @given(st.lists(st.tuples(st.floats(), st.characters())), st.characters())
-def test_list_nested_strucuture_subs_by_attr(childs_list, name_parent):
+def test_serialize_list_nested_strucuture_subs_by_attr(childs_list, name_parent):
     options = DeSerializerOptions(subs_by_attr="name")
-
-    @dataclass
-    class Child:
-        age: float
-        name: str
 
     @dataclass
     class Parent:
@@ -81,7 +89,7 @@ def test_list_nested_strucuture_subs_by_attr(childs_list, name_parent):
 
 
 @given(st.lists(st.tuples(st.floats(), st.characters())))
-def test_dict_field(childs_list):
+def test_serialize_dict_field(childs_list):
     @dataclass
     class Person:
         age: float
@@ -99,7 +107,7 @@ def test_dict_field(childs_list):
 
 
 @given(st.floats(), st.characters())
-def test_overwrite_key(age, name):
+def test_Serialize_overwrite_key(age, name):
     OVERWRITE_KEY = "no_name"
     options = DeSerializerOptions(overwrite_key=OVERWRITE_KEY)
 
@@ -114,7 +122,7 @@ def test_overwrite_key(age, name):
 
 
 @given(st.characters(), st.characters(), st.characters())
-def test_types(name_child, name_parent, job_parent):
+def test_serialize_types(name_child, name_parent, job_parent):
     options = DeSerializerOptions(add_type=True)
 
     @dataclass
@@ -143,7 +151,7 @@ def test_types(name_child, name_parent, job_parent):
 
 
 @given(st.characters(), st.integers(), st.characters(), st.integers(), st.characters())
-def test_flatten(name, age, street_name, house_number, city):
+def test_serialize_flatten(name, age, street_name, house_number, city):
     @dataclass
     class Person:
         name: str
