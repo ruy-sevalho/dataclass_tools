@@ -73,6 +73,19 @@ def test_serialize_list_nested_strucuture(childs_list, name_parent):
 
 
 @given(st.lists(st.tuples(st.floats(), st.characters())), st.characters())
+def test_deserialize_list_nested_strucuture(childs_tuples, name_parent):
+    @dataclass
+    class Parent:
+        childs: list[Child]
+        name: str
+
+    childs = list(Child(age=age, name=name_child) for age, name_child in childs_tuples)
+    parent = Parent(childs=childs, name=name_parent)
+    dct = asdict(parent)
+    assert deserialize_dataclass(dct, Parent) == asdict(parent)
+
+
+@given(st.lists(st.tuples(st.floats(), st.characters())), st.characters())
 def test_serialize_list_nested_strucuture_subs_by_attr(childs_list, name_parent):
     options = DeSerializerOptions(subs_by_attr="name")
 
@@ -86,6 +99,22 @@ def test_serialize_list_nested_strucuture_subs_by_attr(childs_list, name_parent)
     parent_dict = asdict(parent)
     parent_dict.update({"childs": [name_child for _, name_child in childs_list]})
     assert serialize_dataclass(parent) == parent_dict
+
+
+@given(st.lists(st.tuples(st.floats(), st.characters())), st.characters())
+def test_deserialize_list_nested_strucuture_subs_by_attr(childs_list, name_parent):
+    options = DeSerializerOptions(subs_by_attr="name")
+
+    @dataclass
+    class Parent:
+        childs: list[Child] = field(metadata={METADATA_KEY: options})
+        name: str
+
+    childs = list(Child(age=age, name=name_child) for age, name_child in childs_list)
+    parent = Parent(childs=childs, name=name_parent)
+    parent_dict = asdict(parent)
+    parent_dict.update({"childs": [name_child for _, name_child in childs_list]})
+    assert deserialize_dataclass(parent_dict, Parent) == parent_dict
 
 
 @given(st.lists(st.tuples(st.floats(), st.characters())))
@@ -107,7 +136,7 @@ def test_serialize_dict_field(childs_list):
 
 
 @given(st.floats(), st.characters())
-def test_Serialize_overwrite_key(age, name):
+def test_serialize_overwrite_key(age, name):
     OVERWRITE_KEY = "no_name"
     options = DeSerializerOptions(overwrite_key=OVERWRITE_KEY)
 

@@ -213,10 +213,10 @@ class ToolsField:
                         )
                     )
                 inner_type_field = copy(self.field_)
-                inner_type_field.type = self.field_.type.__agrs__[1]
+                inner_type_field.type = self.field_.type.__args__[1]
                 value = {
                     key: ToolsField(inner_type_field)._deserialize_field(
-                        raw_dct=value, build_instance=build_instance
+                        raw_dct=value, build_instance=build_instance, in_collection=True
                     )
                     for key, value in raw_dct[self._key].items()
                 }
@@ -226,9 +226,12 @@ class ToolsField:
             value = raw_dct[self._key]
         typ = self._field_type(value)
         if is_dataclass(typ):
-            value = deserialize_dataclass(value, typ)
+            if not self.options.subs_by_attr:
+                value = _deserialize_dataclass(value, typ)
         if self.options.flatten or in_collection:
             return value
+        if build_instance:
+            value = typ(**value)
         return {self.field_.name: value}
 
 
@@ -277,14 +280,24 @@ def deserialize_dataclass(
         raise TypeError(
             f"dataclass argument must be a dataclass isntance, not '{type(dataclass).__name__}'"
         )
-    input_dict = _deserialize_dataclass(dct, dataclass)
+    input_dict = _deserialize_dataclass(
+        dct, dataclass, build_instance=build_instance, attr_dict_pairs=attr_dict_pairs
+    )
     return input_dict
 
 
-def _deserialize_dataclass(dct: dict, dataclass: DataClass):
+def _deserialize_dataclass(
+    dct: dict,
+    dataclass: DataClass,
+    build_instance: bool = False,
+    attr_dict_pairs: Optional[
+        dict[get_args(PERMITED_KEY_TYPES), dict[get_args(PERMITED_KEY_TYPES), Any]]
+    ] = None,
+):
     """Derializes a dataclass instance."""
 
     list_of_input_dict = [
-        ToolsField(field_)._deserialize_field(dct) for field_ in fields(dataclass)
+        ToolsField(field_)._deserialize_field(dct, build_instance=build_instance)
+        for field_ in fields(dataclass)
     ]
     return {key: value for x in list_of_input_dict for key, value in x.items()}
