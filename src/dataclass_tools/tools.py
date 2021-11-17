@@ -163,27 +163,31 @@ class ToolsField:
             typ = table[type_repr]
         return typ
 
-    def _field_keys(self, dct: dict, in_collection=False):
-        if self.options.flatten:
-            typ = self._field_type(dct, in_collection=in_collection)
-            if not isinstance(typ, DataClass):
-                raise (
-                    ValueError(
-                        f"'{typ.__name__}' cannot be deserialized with flattened=True, only dataclass fields can."
-                    )
-                )
-            inner_keys = []
-            if self.options.add_type:
-                inner_keys.append(self._type_key)
-            for inner_field in fields(typ):
-                tools_inner_field = ToolsField(inner_field)
-                key = tools_inner_field._key
-                inner_dict = dct[key]
-                if tools_inner_field.options.flatten:
-                    inner_dict = dct
-                inner_keys.append(tools_inner_field._field_keys(inner_dict))
-            return inner_keys
-        return self._key
+    # def _field_keys(self, dct: dict, in_collection=False):
+    #     if self.options.flatten:
+    #         typ = self._field_type(dct, in_collection=in_collection)
+    #         if not isinstance(typ, DataClass):
+    #             raise (
+    #                 ValueError(
+    #                     f"'{typ.__name__}' cannot be deserialized with flattened=True, only dataclass fields can."
+    #                 )
+    #             )
+    #         inner_keys = []
+    #         if self.options.add_type:
+    #             inner_keys.append(self._type_key)
+    #         for inner_field in fields(typ):
+    #             tools_inner_field = ToolsField(inner_field)
+    #             key = tools_inner_field._key
+    #             inner_dict = dct[key]
+    #             if tools_inner_field.options.flatten:
+    #                 inner_dict = dct
+    #             inner_keys.append(
+    #                 tools_inner_field._field_keys(
+    #                     inner_dict, in_collection=in_collection
+    #                 )
+    #             )
+    #         return inner_keys
+    #     return self._key
 
     def _deserialize_field(
         self, raw_dct: dict, in_collection=False, build_instance=False
@@ -205,6 +209,7 @@ class ToolsField:
                     )
                     for item in raw_dct[self._key]
                 )
+                return {self.field_.name: value}
             elif origin == dict:
                 if self.options.flatten:
                     raise (
@@ -220,18 +225,19 @@ class ToolsField:
                     )
                     for key, value in raw_dct[self._key].items()
                 }
+                return {self.field_.name: value}
         if in_collection or self.options.flatten:
             value = raw_dct
         else:
             value = raw_dct[self._key]
-        typ = self._field_type(value)
+        typ = self._field_type(value, in_collection=in_collection)
         if is_dataclass(typ):
             if not self.options.subs_by_attr:
                 value = _deserialize_dataclass(value, typ)
+            if build_instance:
+                value = typ(**value)
         if self.options.flatten or in_collection:
             return value
-        if build_instance:
-            value = typ(**value)
         return {self.field_.name: value}
 
 
@@ -289,6 +295,7 @@ def deserialize_dataclass(
 def _deserialize_dataclass(
     dct: dict,
     dataclass: DataClass,
+    in_collection: bool = False,
     build_instance: bool = False,
     attr_dict_pairs: Optional[
         dict[get_args(PERMITED_KEY_TYPES), dict[get_args(PERMITED_KEY_TYPES), Any]]
@@ -297,7 +304,9 @@ def _deserialize_dataclass(
     """Derializes a dataclass instance."""
 
     list_of_input_dict = [
-        ToolsField(field_)._deserialize_field(dct, build_instance=build_instance)
+        ToolsField(field_)._deserialize_field(
+            dct, in_collection=in_collection, build_instance=build_instance
+        )
         for field_ in fields(dataclass)
     ]
     return {key: value for x in list_of_input_dict for key, value in x.items()}

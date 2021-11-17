@@ -120,19 +120,27 @@ def test_deserialize_list_nested_strucuture_subs_by_attr(childs_list, name_paren
 @given(st.lists(st.tuples(st.floats(), st.characters())))
 def test_serialize_dict_field(childs_list):
     @dataclass
-    class Person:
-        age: float
-        name: str
-
-    @dataclass
     class Persons:
-        persons: dict[str, Person]
+        persons: dict[str, Child]
 
     _persons = {
-        name_child: Person(age=age, name=name_child) for age, name_child in childs_list
+        name_child: Child(age=age, name=name_child) for age, name_child in childs_list
     }
     persons = Persons(persons=_persons)
     assert serialize_dataclass(persons) == asdict(persons)
+
+
+@given(st.lists(st.tuples(st.floats(), st.characters())))
+def test_deserialize_dict_field(childs_list):
+    @dataclass
+    class Persons:
+        persons: dict[str, Child]
+
+    _persons = {
+        name_child: Child(age=age, name=name_child) for age, name_child in childs_list
+    }
+    persons = Persons(persons=_persons)
+    assert deserialize_dataclass(asdict(persons), Persons) == asdict(persons)
 
 
 @given(st.floats(), st.characters())
@@ -148,6 +156,36 @@ def test_serialize_overwrite_key(age, name):
     child = Child(age=age, name=name)
     child_dict = {"age": age, OVERWRITE_KEY: name}
     assert serialize_dataclass(child) == child_dict
+
+
+@given(st.floats(), st.characters())
+def test_serialize_overwrite_key(age, name):
+    OVERWRITE_KEY = "no_name"
+    options = DeSerializerOptions(overwrite_key=OVERWRITE_KEY)
+
+    @dataclass
+    class Child:
+        age: float
+        name: str = field(metadata={METADATA_KEY: options})
+
+    child = Child(age=age, name=name)
+    child_dict = {"age": age, OVERWRITE_KEY: name}
+    assert serialize_dataclass(child) == child_dict
+
+
+@given(st.floats(), st.characters())
+def test_deserialize_overwrite_key(age, name):
+    OVERWRITE_KEY = "no_name"
+    options = DeSerializerOptions(overwrite_key=OVERWRITE_KEY)
+
+    @dataclass
+    class Child:
+        age: float
+        name: str = field(metadata={METADATA_KEY: options})
+
+    child = Child(age=age, name=name)
+    child_dict = {"age": age, OVERWRITE_KEY: name}
+    assert deserialize_dataclass(child_dict, Child) == asdict(child)
 
 
 @given(st.characters(), st.characters(), st.characters())
@@ -169,14 +207,44 @@ def test_serialize_types(name_child, name_parent, job_parent):
 
     child = Child(name=name_child)
     adult = Adult(name=name_parent, job=job_parent)
-    person = Persons([child, adult])
+    persons = Persons([child, adult])
     persons_dict = {
         "persons": [
             {"typ": "Child", "name": name_child},
             {"typ": "Adult", "name": name_parent, "job": job_parent},
         ]
     }
-    assert serialize_dataclass(person) == persons_dict
+    assert serialize_dataclass(persons) == persons_dict
+
+
+@given(st.characters(), st.characters(), st.characters())
+def test_deserialize_types(name_child, name_parent, job_parent):
+    @dataclass
+    class Child:
+        name: str
+
+    @dataclass
+    class Adult:
+        name: str
+        job: str
+
+    table = {"Child": Child, "Adult": Adult}
+    options = DeSerializerOptions(add_type=True, subtype_table=table)
+
+    @dataclass
+    class Persons:
+        persons: list[Union[Child, Adult]] = field(metadata={METADATA_KEY: options})
+
+    child = Child(name=name_child)
+    adult = Adult(name=name_parent, job=job_parent)
+    persons = Persons([child, adult])
+    persons_dict = {
+        "persons": [
+            {"typ": "Child", "name": name_child},
+            {"typ": "Adult", "name": name_parent, "job": job_parent},
+        ]
+    }
+    assert deserialize_dataclass(persons_dict, Persons) == asdict(persons)
 
 
 @given(st.characters(), st.integers(), st.characters(), st.integers(), st.characters())
