@@ -29,8 +29,8 @@ def test_serialize_flat_structure(age, name):
 def test_deserialize_flat_structure(age, name):
 
     child = Child(age=age, name=name)
-    dct = asdict(child)
-    assert deserialize_dataclass(dct, Child) == asdict(child)
+    dct = serialize_dataclass(child)
+    assert deserialize_dataclass(dct, Child, build_instance=True) == child
 
 
 @given(st.tuples(st.tuples(st.floats(), st.characters())), st.characters())
@@ -55,8 +55,8 @@ def test_deserialize_tupple_nested_strucuture(childs_tuples, name_parent):
 
     childs = tuple(Child(age=age, name=name_child) for age, name_child in childs_tuples)
     parent = Parent(childs=childs, name=name_parent)
-    dct = asdict(parent)
-    assert deserialize_dataclass(dct, Parent) == asdict(parent)
+    dct = serialize_dataclass(parent)
+    assert deserialize_dataclass(dct, Parent, build_instance=True) == parent
 
 
 @given(st.lists(st.tuples(st.floats(), st.characters())), st.characters())
@@ -81,8 +81,8 @@ def test_deserialize_list_nested_strucuture(childs_tuples, name_parent):
 
     childs = list(Child(age=age, name=name_child) for age, name_child in childs_tuples)
     parent = Parent(childs=childs, name=name_parent)
-    dct = asdict(parent)
-    assert deserialize_dataclass(dct, Parent) == asdict(parent)
+    dct = serialize_dataclass(parent)
+    assert deserialize_dataclass(dct, Parent, build_instance=True) == parent
 
 
 @given(st.lists(st.tuples(st.floats(), st.characters())), st.characters())
@@ -101,7 +101,10 @@ def test_serialize_list_nested_strucuture_subs_by_attr(childs_list, name_parent)
     assert serialize_dataclass(parent) == parent_dict
 
 
-@given(st.lists(st.tuples(st.floats(), st.characters())), st.characters())
+@given(
+    st.lists(st.tuples(st.floats(), st.characters()), unique_by=lambda x: x[1]),
+    st.characters(),
+)
 def test_deserialize_list_nested_strucuture_subs_by_attr(childs_list, name_parent):
     options = DeSerializerOptions(subs_by_attr="name")
 
@@ -111,10 +114,17 @@ def test_deserialize_list_nested_strucuture_subs_by_attr(childs_list, name_paren
         name: str
 
     childs = list(Child(age=age, name=name_child) for age, name_child in childs_list)
+    childs_dict = {child.name: child for child in childs}
+    field_dict_pairs = {"childs": childs_dict}
     parent = Parent(childs=childs, name=name_parent)
     parent_dict = asdict(parent)
     parent_dict.update({"childs": [name_child for _, name_child in childs_list]})
-    assert deserialize_dataclass(parent_dict, Parent) == parent_dict
+    assert (
+        deserialize_dataclass(
+            parent_dict, Parent, build_instance=True, field_dict_pairs=field_dict_pairs
+        )
+        == parent
+    )
 
 
 @given(st.lists(st.tuples(st.floats(), st.characters())))
@@ -189,7 +199,61 @@ def test_deserialize_overwrite_key(age, name):
 
 
 @given(st.characters(), st.characters(), st.characters())
-def test_serialize_types(name_child, name_parent, job_parent):
+def test_serialize_types_with_Uninon(name_child, name_parent, job_parent):
+    options = DeSerializerOptions(add_type=True)
+
+    @dataclass
+    class Child:
+        name: str
+
+    @dataclass
+    class Adult:
+        name: str
+        job: str
+
+    @dataclass
+    class Person:
+        person: Union[Child, Adult] = field(metadata={METADATA_KEY: options})
+
+    child = Child(name=name_child)
+    adult = Adult(name=name_parent, job=job_parent)
+    persons = Person(adult)
+    persons_dict = {
+        "person": {"typ": "Adult", "name": name_parent, "job": job_parent},
+    }
+    assert serialize_dataclass(persons) == persons_dict
+
+
+@given(st.characters(), st.characters(), st.characters())
+def test_deserialize_types_with_Uninon(name_child, name_parent, job_parent):
+    @dataclass
+    class Child:
+        name: str
+
+    @dataclass
+    class Adult:
+        name: str
+        job: str
+
+    table = {"Child": Child, "Adult": Adult}
+    options = DeSerializerOptions(add_type=True, subtype_table=table)
+
+    @dataclass
+    class Person:
+        person: Union[Child, Adult] = field(metadata={METADATA_KEY: options})
+
+    child = Child(name=name_child)
+    adult = Adult(name=name_parent, job=job_parent)
+    persons = Person(adult)
+    persons_dict = {
+        "person": {"typ": "Adult", "name": name_parent, "job": job_parent},
+    }
+
+    assert deserialize_dataclass(persons_dict, Person) == asdict(persons)
+
+
+@given(st.characters(), st.characters(), st.characters())
+def test_serialize_types_in_list(name_child, name_parent, job_parent):
     options = DeSerializerOptions(add_type=True)
 
     @dataclass
@@ -218,7 +282,7 @@ def test_serialize_types(name_child, name_parent, job_parent):
 
 
 @given(st.characters(), st.characters(), st.characters())
-def test_deserialize_types(name_child, name_parent, job_parent):
+def test_deserialize_types_in_list(name_child, name_parent, job_parent):
     @dataclass
     class Child:
         name: str
@@ -278,3 +342,37 @@ def test_serialize_flatten(name, age, street_name, house_number, city):
         **{"location": "StreetAdress"},
     }
     assert serialize_dataclass(citezen) == citezen_dict
+
+
+@given(st.characters(), st.integers(), st.characters(), st.integers(), st.characters())
+def test_deserialize_flatten(name, age, street_name, house_number, city):
+    @dataclass
+    class Person:
+        name: str
+        age: float
+
+    @dataclass
+    class StreetAdress:
+        street_name: str
+        house_number: int
+        city: str
+
+    table = {"StreetAdress": StreetAdress}
+    options = DeSerializerOptions(flatten=True, add_type=True, subtype_table=table)
+
+    @dataclass
+    class Citezen:
+        person: Person
+        location: StreetAdress = field(metadata={METADATA_KEY: options})
+
+    person = Person(name=name, age=age)
+    location = StreetAdress(
+        street_name=street_name, house_number=house_number, city=city
+    )
+    citezen = Citezen(person=person, location=location)
+    citezen_dict = {
+        "person": asdict(person),
+        **asdict(location),
+        **{"location": "StreetAdress"},
+    }
+    assert deserialize_dataclass(citezen_dict, Citezen) == asdict(citezen)

@@ -148,49 +148,26 @@ class ToolsField:
             return value
         return {name: value}
 
-    def _field_type(self, dct: dict, in_collection=False):
+    def _field_type(self, dct: dict):
         typ: type = self.field_.type
         if self.options.add_type:
             if self.options.add_type and not self.options.subtype_table:
                 raise TypeError(
-                    "If add_type is specified for a field a subtype_table must be given also."
+                    """If add_type is specified for a field a subtype_table must be given 
+                    also for deserialization to be possible.
+                    """
                 )
-            if self.options.flatten or in_collection:
-                type_repr = dct[self._type_key]
-            else:
-                type_repr = dct[self._key][self._type_key]
+            type_repr = dct[self._type_key]
             table = self.options.subtype_table
             typ = table[type_repr]
         return typ
 
-    # def _field_keys(self, dct: dict, in_collection=False):
-    #     if self.options.flatten:
-    #         typ = self._field_type(dct, in_collection=in_collection)
-    #         if not isinstance(typ, DataClass):
-    #             raise (
-    #                 ValueError(
-    #                     f"'{typ.__name__}' cannot be deserialized with flattened=True, only dataclass fields can."
-    #                 )
-    #             )
-    #         inner_keys = []
-    #         if self.options.add_type:
-    #             inner_keys.append(self._type_key)
-    #         for inner_field in fields(typ):
-    #             tools_inner_field = ToolsField(inner_field)
-    #             key = tools_inner_field._key
-    #             inner_dict = dct[key]
-    #             if tools_inner_field.options.flatten:
-    #                 inner_dict = dct
-    #             inner_keys.append(
-    #                 tools_inner_field._field_keys(
-    #                     inner_dict, in_collection=in_collection
-    #                 )
-    #             )
-    #         return inner_keys
-    #     return self._key
-
     def _deserialize_field(
-        self, raw_dct: dict, in_collection=False, build_instance=False
+        self,
+        raw_dct: dict,
+        in_collection=False,
+        build_instance=False,
+        field_dict=None,
     ) -> dict[str, Any]:
         """Deserializes a field instance."""
 
@@ -205,7 +182,10 @@ class ToolsField:
                 inner_type_field.type = self.field_.type.__args__[0]
                 value = origin(
                     ToolsField(inner_type_field)._deserialize_field(
-                        item, in_collection=True
+                        item,
+                        in_collection=True,
+                        build_instance=build_instance,
+                        field_dict=field_dict,
                     )
                     for item in raw_dct[self._key]
                 )
@@ -221,7 +201,10 @@ class ToolsField:
                 inner_type_field.type = self.field_.type.__args__[1]
                 value = {
                     key: ToolsField(inner_type_field)._deserialize_field(
-                        raw_dct=value, build_instance=build_instance, in_collection=True
+                        raw_dct=value,
+                        build_instance=build_instance,
+                        in_collection=True,
+                        field_dict=field_dict,
                     )
                     for key, value in raw_dct[self._key].items()
                 }
@@ -230,13 +213,16 @@ class ToolsField:
             value = raw_dct
         else:
             value = raw_dct[self._key]
-        typ = self._field_type(value, in_collection=in_collection)
+        typ = self._field_type(value)
         if is_dataclass(typ):
             if not self.options.subs_by_attr:
                 value = _deserialize_dataclass(value, typ)
             if build_instance:
-                value = typ(**value)
-        if self.options.flatten or in_collection:
+                if self.options.subs_by_attr:
+                    value = field_dict[value]
+                else:
+                    value = typ(**value)
+        if in_collection:
             return value
         return {self.field_.name: value}
 
@@ -276,7 +262,7 @@ def deserialize_dataclass(
     dct: dict,
     dataclass: DataClass,
     build_instance: bool = False,
-    attr_dict_pairs: Optional[
+    field_dict_pairs: Optional[
         dict[get_args(PERMITED_KEY_TYPES), dict[get_args(PERMITED_KEY_TYPES), Any]]
     ] = None,
 ):
@@ -287,8 +273,10 @@ def deserialize_dataclass(
             f"dataclass argument must be a dataclass isntance, not '{type(dataclass).__name__}'"
         )
     input_dict = _deserialize_dataclass(
-        dct, dataclass, build_instance=build_instance, attr_dict_pairs=attr_dict_pairs
+        dct, dataclass, build_instance=build_instance, field_dict_pairs=field_dict_pairs
     )
+    if build_instance:
+        return dataclass(**input_dict)
     return input_dict
 
 
@@ -297,15 +285,20 @@ def _deserialize_dataclass(
     dataclass: DataClass,
     in_collection: bool = False,
     build_instance: bool = False,
-    attr_dict_pairs: Optional[
+    field_dict_pairs: Optional[
         dict[get_args(PERMITED_KEY_TYPES), dict[get_args(PERMITED_KEY_TYPES), Any]]
     ] = None,
 ):
     """Derializes a dataclass instance."""
+    if not field_dict_pairs:
+        field_dict_pairs = dict()
 
     list_of_input_dict = [
         ToolsField(field_)._deserialize_field(
-            dct, in_collection=in_collection, build_instance=build_instance
+            dct,
+            in_collection=in_collection,
+            build_instance=build_instance,
+            field_dict=field_dict_pairs.get(field_.name),
         )
         for field_ in fields(dataclass)
     ]
