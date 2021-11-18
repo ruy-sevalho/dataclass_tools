@@ -12,7 +12,7 @@ class KeyTypeError(ValueError):
 
 
 DEFAULT_TYPE_LABEL = "typ"
-METADATA_KEY = "dataclass_tools"
+DESERIALIZER_OPTIONS = "dataclass_tools"
 PERMITED_KEY_TYPES = Union[str, int, float, bool]
 
 
@@ -69,7 +69,9 @@ class ToolsField:
     field_: Field
 
     def __post_init__(self):
-        self.options = self.field_.metadata.get(METADATA_KEY, DeSerializerOptions())
+        self.options = self.field_.metadata.get(
+            DESERIALIZER_OPTIONS, DeSerializerOptions()
+        )
 
     @property
     def _key(self):
