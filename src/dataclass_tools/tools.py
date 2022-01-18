@@ -139,11 +139,7 @@ class ToolsField:
         elif isinstance(obj, dict):
             value = dict()
             for key, item in obj.items():
-                f: Field = field()
-                f.name = deepcopy(key)
-
-                # f.name = deepcopy(key)
-                value.update(**ToolsField(f)._serialize_field(item))
+                value.update({key: self._serialize_field(item, in_collection=True)})
         else:
             value = self._get_and_process_value(obj)
         if options.flatten or in_collection:
