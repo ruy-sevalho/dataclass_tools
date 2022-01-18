@@ -1,7 +1,7 @@
-from dataclasses import dataclass, Field, field, fields, is_dataclass
-from typing import Any, Optional, Protocol, Union, get_args, runtime_checkable
 from copy import copy, deepcopy
+from dataclasses import Field, dataclass, field, fields, is_dataclass
 from enum import Enum
+from typing import Any, Optional, Protocol, Union, get_args, runtime_checkable
 
 
 class KeyTypeError(ValueError):
@@ -245,7 +245,7 @@ def _get_value(obj):
     if isinstance(obj, DataClass):
         return _serialize_dataclass(obj)
     if isinstance(obj, Enum):
-        return Enum.name
+        return obj.name
     else:
         return deepcopy(obj)
 
