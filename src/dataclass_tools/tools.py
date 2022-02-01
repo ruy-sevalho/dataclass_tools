@@ -1,7 +1,55 @@
+"""
+ # @ Author: Ruy Sevalho
+ # @ Create Time: 2021-10-25 18:15:28
+ # @ Modified by: Ruy Sevalho
+ # @ Modified time: 2022-01-21 11:07:47
+ # @ Description:
+ """
+
 from copy import copy, deepcopy
-from dataclasses import Field, dataclass, field, fields, is_dataclass
+from dataclasses import Field, dataclass, fields, is_dataclass
 from enum import Enum
 from typing import Any, Optional, Protocol, Union, get_args, runtime_checkable
+
+import quantities as pq
+
+
+@dataclass
+class NamePrint:
+    """Strings for printing value name."""
+
+    long: str
+    abreviation: Optional[str] = None
+
+
+@dataclass
+class PrintWrapper:
+    """Print wrapper for string or quantity values."""
+
+    value: Any
+    names: NamePrint
+
+
+@dataclass
+class PrintMetadata:
+    long_name: str
+    abreviation: Optional[str] = None
+    units: str = ""
+
+    @property
+    def names(self):
+        abr = self.abreviation or self.long_name
+        return NamePrint(long=self.long_name, abreviation=abr)
+
+    def print_value(self, value, include_names: bool = False):
+        if isinstance(value, (int, float)):
+            if self.units == "percent":
+                value *= 100
+            value = pq.Quantity(value, self.units)
+        if include_names:
+            return PrintWrapper(value, self.names)
+        else:
+            return value
 
 
 class KeyTypeError(ValueError):
@@ -13,7 +61,7 @@ class KeyTypeError(ValueError):
 
 DEFAULT_TYPE_LABEL = "typ"
 DESERIALIZER_OPTIONS = "dataclass_tools"
-PERMITED_KEY_TYPES = Union[str, int, float, bool]
+PERMITED_KEY_TYPES = Union[str, int, float, bool, Enum]
 
 
 @runtime_checkable
@@ -33,6 +81,7 @@ class GetType(Protocol):
 
 def _get_type_default(typ) -> str:
     """Default naming function for a type."""
+
     return typ.__name__
 
 
@@ -48,7 +97,7 @@ class DeSerializerOptions:
     type_label: key to be used for 'type' of value. Default value is 'typ', or in flattened fields the field name.
 
     type_name: How to name the field's type. Can be a string, in which case that value will be used, or a callable that
-    receives a class and returns a string
+    receives a class(type) and returns a string
 
     subtype_table: dict containg mapping of type_labels to the specific class.
 
@@ -56,12 +105,14 @@ class DeSerializerOptions:
     """
 
     subs_by_attr: Optional[str] = None
+    subs_collection_name: Optional[str] = None
     flatten: bool = False
     add_type: Union[bool, str] = False
     type_label: Optional[str] = None
     type_name: Union[GetType, str] = _get_type_default
     subtype_table: Optional[dict[get_args(PERMITED_KEY_TYPES), type]] = None
     overwrite_key: Optional[str] = None
+    metadata: Optional[PrintMetadata] = None
 
 
 @dataclass
@@ -72,6 +123,15 @@ class ToolsField:
         self.options = self.field_.metadata.get(
             DESERIALIZER_OPTIONS, DeSerializerOptions()
         )
+
+    def _print_wrapper_builder(self, value, metadata: PrintMetadata):
+
+        if isinstance(value, (int, float)):
+            if metadata.units == "percent":
+                value *= 100
+            return PrintWrapper(pq.Quantity(value, metadata.units), metadata.names)
+        else:
+            return PrintWrapper(value, metadata.names)
 
     @property
     def _key(self):
@@ -93,6 +153,15 @@ class ToolsField:
             )
 
     @property
+    def _collection_key(self):
+        """Key of collection in dictionay of collections for subs_by_attr option."""
+
+        if not self.options.subs_collection_name:
+            return self.field_.name
+
+        return self.options.subs_collection_name
+
+    @property
     def _type_key(self):
         """Returns a key for the type of a field, to be used in dictionary representation of dataclass."""
 
@@ -101,7 +170,13 @@ class ToolsField:
         default_label = DEFAULT_TYPE_LABEL if not self.options.flatten else self._key
         return self.options.type_label or default_label
 
-    def _get_and_process_value(self, obj):
+    def _get_and_process_value(
+        self,
+        obj,
+        print_format: bool = False,
+        include_names: bool = False,
+        flatten=False,
+    ):
         """Returns the obj serialized as a dict. Should be called on individual instances,
         not collections.
         """
@@ -114,18 +189,30 @@ class ToolsField:
                 raise KeyTypeError(
                     f"attr chosen to substitute dataclass value is assumed will be used as key in dictionary, so cannot be of '{type(attr).__name__}' type."
                 )
-            return getattr(obj, options.subs_by_attr)
-        value = _get_value(obj)
-        if options.add_type:
-            type_str = self._type_str(type(obj))
-            # Putting the type entry in the begging seemed to make more sense
-            value = {**{self._type_key: type_str}, **value}
+            value = attr
+        else:
+            value = _get_value(
+                obj, printing_format=print_format, include_names=include_names
+            )
+            if options.add_type:
+                type_str = self._type_str(type(obj))
+                # Putting the type entry in the begging seemed to make more sense
+                value = {**{self._type_key: type_str}, **value}
+        if print_format:
+            if not options.metadata:
+                raise ValueError(
+                    f"Must provide metadata option for field to serialize in print format"
+                )
+            if not flatten:
+                value = options.metadata.print_value(value, include_names=include_names)
         return value
 
     def _serialize_field(
         self,
         obj: Any,
         in_collection: bool = False,
+        printing_format: bool = False,
+        include_names: bool = False,
     ):
         """Returns a dataclass field serialized."""
 
@@ -133,15 +220,35 @@ class ToolsField:
         name = self._key
         if isinstance(obj, (list, tuple)):
             value: Union[list, tuple, dict] = type(obj)(
-                self._serialize_field(item, in_collection=True) for item in obj
+                self._serialize_field(
+                    item,
+                    in_collection=True,
+                    printing_format=printing_format,
+                    include_names=include_names,
+                )
+                for item in obj
             )
             return {name: value}
         elif isinstance(obj, dict):
             value = dict()
             for key, item in obj.items():
-                value.update({key: self._serialize_field(item, in_collection=True)})
+                value.update(
+                    {
+                        key: self._serialize_field(
+                            item,
+                            in_collection=True,
+                            printing_format=printing_format,
+                            include_names=include_names,
+                        )
+                    }
+                )
         else:
-            value = self._get_and_process_value(obj)
+            value = self._get_and_process_value(
+                obj,
+                print_format=printing_format,
+                include_names=include_names,
+                flatten=options.flatten,
+            )
         if options.flatten or in_collection:
             return value
         return {name: value}
@@ -165,7 +272,7 @@ class ToolsField:
         raw_dct: dict,
         in_collection=False,
         build_instance=False,
-        field_dict=None,
+        dict_of_collections=None,
     ) -> dict[str, Any]:
         """Deserializes a field instance."""
 
@@ -183,7 +290,7 @@ class ToolsField:
                         item,
                         in_collection=True,
                         build_instance=build_instance,
-                        field_dict=field_dict,
+                        dict_of_collections=dict_of_collections,
                     )
                     for item in raw_dct[self._key]
                 )
@@ -202,7 +309,7 @@ class ToolsField:
                         raw_dct=value,
                         build_instance=build_instance,
                         in_collection=True,
-                        field_dict=field_dict,
+                        dict_of_collections=dict_of_collections,
                     )
                     for key, value in raw_dct[self._key].items()
                 }
@@ -210,94 +317,118 @@ class ToolsField:
         if in_collection or self.options.flatten:
             value = raw_dct
         else:
-            value = raw_dct[self._key]
+            value = raw_dct.get(self._key)
         typ = self._field_type(value)
         if is_dataclass(typ):
             if not self.options.subs_by_attr:
-                value = _deserialize_dataclass(value, typ)
-            if build_instance:
-                if self.options.subs_by_attr:
-                    value = field_dict[value]
-                else:
-                    value = typ(**value)
+                value = _deserialize_dataclass(
+                    value,
+                    typ,
+                    dict_of_collections=dict_of_collections,
+                    build_instance=build_instance,
+                )
+            if build_instance and self.options.subs_by_attr:
+                value = dict_of_collections[self._collection_key][value]
         if in_collection:
             return value
         return {self.field_.name: value}
 
 
-def _serialize_dataclass(obj: DataClass) -> dict[str, Any]:
+def _serialize_dataclass(
+    obj: DataClass,
+    printing_format: bool = False,
+    include_names: bool = False,
+) -> dict[str, Any]:
     """Returns a serilized dataclass object."""
 
     list_of_dict_repr = [
-        ToolsField(field_)._serialize_field(getattr(obj, field_.name))
+        ToolsField(field_)._serialize_field(
+            getattr(obj, field_.name),
+            printing_format=printing_format,
+            include_names=include_names,
+        )
         for field_ in fields(obj)
     ]
     return {key: value for x in list_of_dict_repr for key, value in x.items()}
 
 
-def _get_value(obj):
+def _get_value(obj, printing_format=False, include_names=False):
     """Returns the serialzed value of an object. Should called on single objects, not conatainers such as lists and dicts."""
 
     if isinstance(obj, DataClass):
-        return _serialize_dataclass(obj)
+        return _serialize_dataclass(
+            obj, printing_format=printing_format, include_names=include_names
+        )
     if isinstance(obj, Enum):
         return obj.name
     else:
         return deepcopy(obj)
 
 
+def _deserialize_dataclass(
+    dct: dict,
+    dataclass: DataClass,
+    in_collection: bool = False,
+    build_instance: bool = True,
+    dict_of_collections: Optional[
+        dict[get_args(PERMITED_KEY_TYPES), dict[get_args(PERMITED_KEY_TYPES), Any]]
+    ] = None,
+):
+    """Derializes a dataclass instance."""
+    list_of_input_dict = [
+        ToolsField(field_)._deserialize_field(
+            dct,
+            in_collection=in_collection,
+            build_instance=build_instance,
+            dict_of_collections=dict_of_collections,
+        )
+        for field_ in fields(dataclass)
+    ]
+    # flattening the list of input dicts to be able to call the class instance creator
+    input_dict = {
+        key: value
+        for x in list_of_input_dict
+        for key, value in x.items()
+        if not value is None
+    }
+
+    if build_instance:
+        instance = dataclass(**input_dict)
+        return instance
+    return input_dict
+
+
 def serialize_dataclass(
     obj: DataClass,
+    printing_format: bool = False,
+    include_names: bool = False,
 ) -> dict[str, Any]:
     """Serializes a dataclass instance."""
 
     if not isinstance(obj, DataClass):
         raise TypeError(f"obj must be a dataclass, not '{type(obj).__name__}'")
-    return _serialize_dataclass(obj)
+    return _serialize_dataclass(
+        obj, printing_format=printing_format, include_names=include_names
+    )
 
 
 def deserialize_dataclass(
     dct: dict,
     dataclass: DataClass,
     build_instance: bool = False,
-    field_dict_pairs: Optional[
+    dict_of_collections: Optional[
         dict[get_args(PERMITED_KEY_TYPES), dict[get_args(PERMITED_KEY_TYPES), Any]]
     ] = None,
 ):
-    """Derializes a dataclass instance."""
+    """Deserializes a dataclass instance."""
 
     if not isinstance(dataclass, DataClass):
         raise TypeError(
             f"dataclass argument must be a dataclass isntance, not '{type(dataclass).__name__}'"
         )
-    input_dict = _deserialize_dataclass(
-        dct, dataclass, build_instance=build_instance, field_dict_pairs=field_dict_pairs
+    return _deserialize_dataclass(
+        dct,
+        dataclass,
+        build_instance=build_instance,
+        dict_of_collections=dict_of_collections,
     )
-    if build_instance:
-        return dataclass(**input_dict)
-    return input_dict
-
-
-def _deserialize_dataclass(
-    dct: dict,
-    dataclass: DataClass,
-    in_collection: bool = False,
-    build_instance: bool = False,
-    field_dict_pairs: Optional[
-        dict[get_args(PERMITED_KEY_TYPES), dict[get_args(PERMITED_KEY_TYPES), Any]]
-    ] = None,
-):
-    """Derializes a dataclass instance."""
-    if not field_dict_pairs:
-        field_dict_pairs = dict()
-
-    list_of_input_dict = [
-        ToolsField(field_)._deserialize_field(
-            dct,
-            in_collection=in_collection,
-            build_instance=build_instance,
-            field_dict=field_dict_pairs.get(field_.name),
-        )
-        for field_ in fields(dataclass)
-    ]
-    return {key: value for x in list_of_input_dict for key, value in x.items()}
