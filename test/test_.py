@@ -1,15 +1,16 @@
 from dataclasses import asdict, dataclass, field
 from typing import Union
-from pytest import fixture
-from hypothesis import given, strategies as st
 
 from dataclass_tools.tools import (
+    DESERIALIZER_OPTIONS,
     DataClass,
+    DeSerializerOptions,
     deserialize_dataclass,
     serialize_dataclass,
-    DeSerializerOptions,
-    METADATA_KEY,
 )
+from hypothesis import given
+from hypothesis import strategies as st
+from pytest import fixture
 
 
 @dataclass
@@ -91,7 +92,7 @@ def test_serialize_list_nested_strucuture_subs_by_attr(childs_list, name_parent)
 
     @dataclass
     class Parent:
-        childs: list[Child] = field(metadata={METADATA_KEY: options})
+        childs: list[Child] = field(metadata={DESERIALIZER_OPTIONS: options})
         name: str
 
     childs = list(Child(age=age, name=name_child) for age, name_child in childs_list)
@@ -110,7 +111,7 @@ def test_deserialize_list_nested_strucuture_subs_by_attr(childs_list, name_paren
 
     @dataclass
     class Parent:
-        childs: list[Child] = field(metadata={METADATA_KEY: options})
+        childs: list[Child] = field(metadata={DESERIALIZER_OPTIONS: options})
         name: str
 
     childs = list(Child(age=age, name=name_child) for age, name_child in childs_list)
@@ -121,7 +122,10 @@ def test_deserialize_list_nested_strucuture_subs_by_attr(childs_list, name_paren
     parent_dict.update({"childs": [name_child for _, name_child in childs_list]})
     assert (
         deserialize_dataclass(
-            parent_dict, Parent, build_instance=True, field_dict_pairs=field_dict_pairs
+            parent_dict,
+            Parent,
+            build_instance=True,
+            dict_of_collections=field_dict_pairs,
         )
         == parent
     )
@@ -161,7 +165,7 @@ def test_serialize_overwrite_key(age, name):
     @dataclass
     class Child:
         age: float
-        name: str = field(metadata={METADATA_KEY: options})
+        name: str = field(metadata={DESERIALIZER_OPTIONS: options})
 
     child = Child(age=age, name=name)
     child_dict = {"age": age, OVERWRITE_KEY: name}
@@ -176,7 +180,7 @@ def test_serialize_overwrite_key(age, name):
     @dataclass
     class Child:
         age: float
-        name: str = field(metadata={METADATA_KEY: options})
+        name: str = field(metadata={DESERIALIZER_OPTIONS: options})
 
     child = Child(age=age, name=name)
     child_dict = {"age": age, OVERWRITE_KEY: name}
@@ -191,7 +195,7 @@ def test_deserialize_overwrite_key(age, name):
     @dataclass
     class Child:
         age: float
-        name: str = field(metadata={METADATA_KEY: options})
+        name: str = field(metadata={DESERIALIZER_OPTIONS: options})
 
     child = Child(age=age, name=name)
     child_dict = {"age": age, OVERWRITE_KEY: name}
@@ -213,7 +217,7 @@ def test_serialize_types_with_Uninon(name_child, name_parent, job_parent):
 
     @dataclass
     class Person:
-        person: Union[Child, Adult] = field(metadata={METADATA_KEY: options})
+        person: Union[Child, Adult] = field(metadata={DESERIALIZER_OPTIONS: options})
 
     child = Child(name=name_child)
     adult = Adult(name=name_parent, job=job_parent)
@@ -240,7 +244,7 @@ def test_deserialize_types_with_Uninon(name_child, name_parent, job_parent):
 
     @dataclass
     class Person:
-        person: Union[Child, Adult] = field(metadata={METADATA_KEY: options})
+        person: Union[Child, Adult] = field(metadata={DESERIALIZER_OPTIONS: options})
 
     child = Child(name=name_child)
     adult = Adult(name=name_parent, job=job_parent)
@@ -267,7 +271,9 @@ def test_serialize_types_in_list(name_child, name_parent, job_parent):
 
     @dataclass
     class Persons:
-        persons: list[Union[Child, Adult]] = field(metadata={METADATA_KEY: options})
+        persons: list[Union[Child, Adult]] = field(
+            metadata={DESERIALIZER_OPTIONS: options}
+        )
 
     child = Child(name=name_child)
     adult = Adult(name=name_parent, job=job_parent)
@@ -297,7 +303,9 @@ def test_deserialize_types_in_list(name_child, name_parent, job_parent):
 
     @dataclass
     class Persons:
-        persons: list[Union[Child, Adult]] = field(metadata={METADATA_KEY: options})
+        persons: list[Union[Child, Adult]] = field(
+            metadata={DESERIALIZER_OPTIONS: options}
+        )
 
     child = Child(name=name_child)
     adult = Adult(name=name_parent, job=job_parent)
@@ -329,7 +337,7 @@ def test_serialize_flatten(name, age, street_name, house_number, city):
     @dataclass
     class Citezen:
         person: Person
-        location: StreetAdress = field(metadata={METADATA_KEY: options})
+        location: StreetAdress = field(metadata={DESERIALIZER_OPTIONS: options})
 
     person = Person(name=name, age=age)
     location = StreetAdress(
@@ -363,7 +371,7 @@ def test_deserialize_flatten(name, age, street_name, house_number, city):
     @dataclass
     class Citezen:
         person: Person
-        location: StreetAdress = field(metadata={METADATA_KEY: options})
+        location: StreetAdress = field(metadata={DESERIALIZER_OPTIONS: options})
 
     person = Person(name=name, age=age)
     location = StreetAdress(
