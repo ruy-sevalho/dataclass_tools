@@ -42,7 +42,7 @@ class PrintMetadata:
         return NamePrint(long=self.long_name, abreviation=abr)
 
     def print_value(self, value, include_names: bool = False):
-        if isinstance(value, (int, float)):
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
             if self.units == "percent":
                 value *= 100
             value = pq.Quantity(value, self.units)
@@ -129,9 +129,12 @@ class ToolsField:
         if isinstance(value, (int, float)):
             if metadata.units == "percent":
                 value *= 100
-            return PrintWrapper(pq.Quantity(value, metadata.units), metadata.names)
+            print_wrapper = PrintWrapper(
+                pq.Quantity(value, metadata.units), metadata.names
+            )
         else:
-            return PrintWrapper(value, metadata.names)
+            print_wrapper = PrintWrapper(value, metadata.names)
+        return print_wrapper
 
     @property
     def _key(self):
@@ -175,7 +178,6 @@ class ToolsField:
         obj,
         print_format: bool = False,
         include_names: bool = False,
-        flatten=False,
     ):
         """Returns the obj serialized as a dict. Should be called on individual instances,
         not collections.
@@ -197,13 +199,17 @@ class ToolsField:
             if options.add_type:
                 type_str = self._type_str(type(obj))
                 # Putting the type entry in the begging seemed to make more sense
+                if print_format:
+                    type_str = options.metadata.print_value(
+                        type_str, include_names=include_names
+                    )
                 value = {**{self._type_key: type_str}, **value}
         if print_format:
-            if not options.metadata:
+            if not options.metadata and not options.flatten:
                 raise ValueError(
                     f"Must provide metadata option for field to serialize in print format"
                 )
-            if not flatten:
+            if not options.flatten:
                 value = options.metadata.print_value(value, include_names=include_names)
         return value
 
@@ -247,7 +253,6 @@ class ToolsField:
                 obj,
                 print_format=printing_format,
                 include_names=include_names,
-                flatten=options.flatten,
             )
         if options.flatten or in_collection:
             return value
@@ -338,6 +343,7 @@ def _serialize_dataclass(
     obj: DataClass,
     printing_format: bool = False,
     include_names: bool = False,
+    filter_fields: Optional[list[str]] = list(),
 ) -> dict[str, Any]:
     """Returns a serilized dataclass object."""
 
@@ -348,6 +354,7 @@ def _serialize_dataclass(
             include_names=include_names,
         )
         for field_ in fields(obj)
+        if field_.name not in filter_fields
     ]
     return {key: value for x in list_of_dict_repr for key, value in x.items()}
 
@@ -402,13 +409,17 @@ def serialize_dataclass(
     obj: DataClass,
     printing_format: bool = False,
     include_names: bool = False,
+    filter_fields: Optional[list[str]] = list(),
 ) -> dict[str, Any]:
     """Serializes a dataclass instance."""
 
     if not isinstance(obj, DataClass):
         raise TypeError(f"obj must be a dataclass, not '{type(obj).__name__}'")
     return _serialize_dataclass(
-        obj, printing_format=printing_format, include_names=include_names
+        obj,
+        printing_format=printing_format,
+        include_names=include_names,
+        filter_fields=filter_fields,
     )
 
 
