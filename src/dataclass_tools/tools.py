@@ -282,10 +282,6 @@ class ToolsField:
         """Deserializes a field instance."""
 
         if hasattr(self.field_.type, "__origin__"):
-            if self.options.flatten:
-                raise ValueError(
-                    f"'{type(self.field_.type)}' can't be flattened, only dataclasses"
-                )
             origin: type = self.field_.type.__origin__
             if origin == list or origin == tuple:
                 inner_type_field = copy(self.field_)
