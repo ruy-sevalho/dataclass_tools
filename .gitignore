@@ -10,3 +10,4 @@ mypy.ini
 report/
 .hypothesis/
 dataclass_tools.egg-info
+.venv/
