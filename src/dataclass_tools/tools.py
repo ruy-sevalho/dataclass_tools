@@ -89,7 +89,7 @@ def _get_type_default(typ) -> str:
 class DeSerializerOptions:
     """Options for field serializer function.
 
-    subs_by_attr: attribute name to substitute the dataclass value, usually to be used as key in dict containg actual instances
+    subs_by_attr: attribute name to substitute the dataclass value in serialization, usually to be used as key in dict containg actual instances
 
     flatten: If True will flatten the dataclass serialized dict into the parent object. In case of list and tuples as values
     of fields this options will be overiden a values flattended automaticaly
